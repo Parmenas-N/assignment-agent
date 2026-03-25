@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { supabase } from '@/lib/supabase'
 import { 
   CheckCircle, 
   Circle, 
@@ -11,13 +12,18 @@ import {
   Sparkles,
   Clock,
   BookOpen,
-  Award
+  Award,
+  LogOut,
+  Mail,
+  Lock,
+  UserPlus,
+  LogIn
 } from 'lucide-react'
 
 interface Task {
   id: string
   title: string
-  dueDate: string
+  due_date: string
   completed: boolean
   course?: string
 }
@@ -28,19 +34,133 @@ export default function Home() {
   const [dueDate, setDueDate] = useState('')
   const [course, setCourse] = useState('')
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all')
+  const [user, setUser] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [isSignUp, setIsSignUp] = useState(false)
+  const [authLoading, setAuthLoading] = useState(false)
 
-  // Load tasks from localStorage
+  // Check if user is logged in
   useEffect(() => {
-    const savedTasks = localStorage.getItem('tasks')
-    if (savedTasks) {
-      setTasks(JSON.parse(savedTasks))
-    }
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user || null)
+      if (session?.user) {
+        fetchTasks(session.user.id)
+      }
+      setLoading(false)
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user || null)
+      if (session?.user) {
+        fetchTasks(session.user.id)
+      } else {
+        setTasks([])
+      }
+    })
+
+    return () => subscription.unsubscribe()
   }, [])
 
-  // Save tasks to localStorage
-  useEffect(() => {
-    localStorage.setItem('tasks', JSON.stringify(tasks))
-  }, [tasks])
+  // Fetch tasks from Supabase
+  const fetchTasks = async (userId: string) => {
+    const { data, error } = await supabase
+      .from('tasks')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      console.error('Error fetching tasks:', error)
+    } else {
+      setTasks(data || [])
+    }
+  }
+
+  // Handle authentication
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setAuthLoading(true)
+    
+    if (isSignUp) {
+      const { error } = await supabase.auth.signUp({ email, password })
+      if (error) {
+        alert(error.message)
+      } else {
+        alert('Check your email for confirmation! ✉️')
+      }
+    } else {
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) {
+        alert(error.message)
+      }
+    }
+    setAuthLoading(false)
+  }
+
+  // Sign out
+  const handleSignOut = async () => {
+    await supabase.auth.signOut()
+  }
+
+  // Add task to Supabase
+  const addTask = async () => {
+    if (!newTask.trim() || !user) return
+
+    const task = {
+      user_id: user.id,
+      title: newTask,
+      due_date: dueDate || 'No deadline',
+      course: course || 'General',
+      completed: false,
+    }
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .insert([task])
+      .select()
+
+    if (error) {
+      console.error('Error adding task:', error)
+      alert('Failed to add task')
+    } else if (data) {
+      setTasks([data[0], ...tasks])
+      setNewTask('')
+      setDueDate('')
+      setCourse('')
+    }
+  }
+
+  // Toggle task completion
+  const toggleTask = async (id: string, completed: boolean) => {
+    const { error } = await supabase
+      .from('tasks')
+      .update({ completed: !completed })
+      .eq('id', id)
+
+    if (error) {
+      console.error('Error updating task:', error)
+    } else {
+      setTasks(tasks.map(task => 
+        task.id === id ? { ...task, completed: !completed } : task
+      ))
+    }
+  }
+
+  // Delete task
+  const deleteTask = async (id: string) => {
+    const { error } = await supabase
+      .from('tasks')
+      .delete()
+      .eq('id', id)
+
+    if (error) {
+      console.error('Error deleting task:', error)
+    } else {
+      setTasks(tasks.filter(task => task.id !== id))
+    }
+  }
 
   const getPriority = (dueDate: string): 'high' | 'medium' | 'low' => {
     if (!dueDate || dueDate === 'No deadline') return 'medium'
@@ -53,35 +173,6 @@ export default function Home() {
     return 'low'
   }
 
-  const addTask = () => {
-    if (!newTask.trim()) return
-
-    const task: Task = {
-      id: Date.now().toString(),
-      title: newTask,
-      dueDate: dueDate || 'No deadline',
-      completed: false,
-      course: course || 'General',
-    }
-
-    setTasks([...tasks, task])
-    setNewTask('')
-    setDueDate('')
-    setCourse('')
-  }
-
-  const toggleTask = (id: string) => {
-    setTasks(
-      tasks.map((task) =>
-        task.id === id ? { ...task, completed: !task.completed } : task
-      )
-    )
-  }
-
-  const deleteTask = (id: string) => {
-    setTasks(tasks.filter((task) => task.id !== id))
-  }
-
   const filteredTasks = tasks.filter(task => {
     if (filter === 'active') return !task.completed
     if (filter === 'completed') return task.completed
@@ -92,13 +183,112 @@ export default function Home() {
     total: tasks.length,
     completed: tasks.filter(t => t.completed).length,
     active: tasks.filter(t => !t.completed).length,
-    highPriority: tasks.filter(t => !t.completed && getPriority(t.dueDate) === 'high').length
+    highPriority: tasks.filter(t => !t.completed && getPriority(t.due_date) === 'high').length
   }
 
   const completionRate = stats.total === 0 ? 0 : Math.round((stats.completed / stats.total) * 100)
 
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-800">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-white mx-auto"></div>
+          <p className="mt-4 text-white text-lg">Loading your workspace...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Show auth form if not logged in
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-800 p-6">
+        <div className="relative">
+          {/* Animated background glow */}
+          <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-2xl blur-xl opacity-30 animate-pulse"></div>
+          
+          <div className="relative bg-white/10 backdrop-blur-xl rounded-2xl shadow-2xl p-8 max-w-md w-full border border-white/20">
+            <div className="text-center mb-8">
+              <div className="inline-flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-5 py-2.5 rounded-full mb-4 shadow-lg">
+                <Sparkles className="w-5 h-5" />
+                <span className="font-semibold">Assignment Agent</span>
+              </div>
+              <h2 className="text-3xl font-bold text-white mb-2">
+                {isSignUp ? 'Create Account' : 'Welcome Back'}
+              </h2>
+              <p className="text-white/70">
+                {isSignUp 
+                  ? 'Start managing your assignments today' 
+                  : 'Sign in to continue your journey'}
+              </p>
+            </div>
+
+            <form onSubmit={handleAuth} className="space-y-5">
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-white/50" />
+                <input
+                  type="email"
+                  placeholder="Email address"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-white placeholder-white/50"
+                  required
+                />
+              </div>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-white/50" />
+                <input
+                  type="password"
+                  placeholder="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-white placeholder-white/50"
+                  required
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={authLoading}
+                className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white py-3 rounded-xl font-semibold hover:from-indigo-600 hover:to-purple-700 transition-all duration-300 transform hover:scale-[1.02] disabled:opacity-50 disabled:hover:scale-100 shadow-lg"
+              >
+                {authLoading ? (
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                    <span>Processing...</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center gap-2">
+                    {isSignUp ? <UserPlus size={20} /> : <LogIn size={20} />}
+                    <span>{isSignUp ? 'Create Account' : 'Sign In'}</span>
+                  </div>
+                )}
+              </button>
+            </form>
+
+            <div className="mt-6 text-center">
+              <button
+                onClick={() => setIsSignUp(!isSignUp)}
+                className="text-white/80 hover:text-white transition-colors text-sm"
+              >
+                {isSignUp 
+                  ? 'Already have an account? Sign In →' 
+                  : "Don't have an account? Create one →"}
+              </button>
+            </div>
+
+            {/* Decorative elements */}
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 -z-10">
+              <div className="w-64 h-64 bg-indigo-500 rounded-full blur-3xl opacity-20"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Show main dashboard when logged in
   return (
-    // Background Image with Overlay
     <div 
       className="min-h-screen relative"
       style={{
@@ -108,28 +298,35 @@ export default function Home() {
         backgroundAttachment: "fixed"
       }}
     >
-      {/* Dark overlay for better text contrast */}
       <div className="absolute inset-0 bg-black/60"></div>
       
-      {/* Content - everything goes inside here */}
       <div className="relative z-10">
         <div className="max-w-4xl mx-auto p-6">
           
-          {/* Header */}
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-6 py-3 rounded-full shadow-lg mb-4">
-              <Sparkles className="w-5 h-5" />
-              <span className="font-semibold">AI-Powered Assignment Tracker</span>
+          {/* Header with Sign Out */}
+          <div className="flex justify-between items-center mb-8">
+            <div className="text-center flex-1">
+              <div className="inline-flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-6 py-3 rounded-full shadow-lg mb-4">
+                <Sparkles className="w-5 h-5" />
+                <span className="font-semibold">AI-Powered Assignment Tracker</span>
+              </div>
+              <h1 className="text-5xl font-bold text-white mb-2">
+                Assignment Agent
+              </h1>
+              <p className="text-gray-200">Never miss a deadline again ✨</p>
             </div>
-            <h1 className="text-5xl font-bold text-white mb-2">
-              Assignment Agent
-            </h1>
-            <p className="text-gray-200">Never miss a deadline again ✨</p>
+            <button
+              onClick={handleSignOut}
+              className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-all backdrop-blur-sm"
+            >
+              <LogOut size={18} />
+              Sign Out
+            </button>
           </div>
 
           {/* Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-            <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-md p-4 border border-indigo-100">
+            <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-md p-4 hover:shadow-lg transition-all">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-500 text-sm">Total Tasks</p>
@@ -139,7 +336,7 @@ export default function Home() {
               </div>
             </div>
             
-            <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-md p-4 border border-green-100">
+            <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-md p-4 hover:shadow-lg transition-all">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-500 text-sm">Completed</p>
@@ -149,7 +346,7 @@ export default function Home() {
               </div>
             </div>
             
-            <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-md p-4 border border-yellow-100">
+            <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-md p-4 hover:shadow-lg transition-all">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-500 text-sm">Active</p>
@@ -159,7 +356,7 @@ export default function Home() {
               </div>
             </div>
             
-            <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-md p-4 border border-red-100">
+            <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-md p-4 hover:shadow-lg transition-all">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-500 text-sm">Urgent</p>
@@ -186,7 +383,7 @@ export default function Home() {
             </div>
           )}
 
-          {/* Add Task Form - FIXED VISIBILITY */}
+          {/* Add Task Form */}
           <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-6 mb-6">
             <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
               <Plus className="w-5 h-5 text-indigo-500" />
@@ -199,21 +396,21 @@ export default function Home() {
                 value={newTask}
                 onChange={(e) => setNewTask(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && addTask()}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all bg-white text-gray-900 placeholder-gray-500"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-gray-900 placeholder-gray-500"
               />
               <input
                 type="text"
                 placeholder="Course (e.g., Math 101)"
                 value={course}
                 onChange={(e) => setCourse(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all bg-white text-gray-900 placeholder-gray-500"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-gray-900 placeholder-gray-500"
               />
               <div className="flex gap-2">
                 <input
                   type="date"
                   value={dueDate}
                   onChange={(e) => setDueDate(e.target.value)}
-                  className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all bg-white text-gray-900"
+                  className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-gray-900"
                 />
                 <button
                   onClick={addTask}
@@ -226,7 +423,7 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Filter Tabs - FIXED VISIBILITY */}
+          {/* Filter Tabs */}
           <div className="flex gap-2 mb-6">
             <button
               onClick={() => setFilter('all')}
@@ -270,7 +467,7 @@ export default function Home() {
               </div>
             ) : (
               filteredTasks.map((task) => {
-                const priority = getPriority(task.dueDate)
+                const priority = getPriority(task.due_date)
                 const priorityColors = {
                   high: 'border-l-4 border-red-500 bg-red-50',
                   medium: 'border-l-4 border-yellow-500 bg-yellow-50',
@@ -286,7 +483,7 @@ export default function Home() {
                   >
                     <div className="flex items-center justify-between p-4">
                       <div className="flex items-center gap-3 flex-1">
-                        <button onClick={() => toggleTask(task.id)} className="hover:scale-110 transition-transform">
+                        <button onClick={() => toggleTask(task.id, task.completed)} className="hover:scale-110 transition-transform">
                           {task.completed ? (
                             <CheckCircle className="text-green-600" size={24} />
                           ) : (
@@ -309,7 +506,7 @@ export default function Home() {
                             )}
                             <span className="text-xs flex items-center gap-1 text-gray-500">
                               <Calendar size={12} />
-                              Due: {task.dueDate}
+                              Due: {task.due_date}
                             </span>
                             {!task.completed && priority === 'high' && (
                               <span className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded-full animate-pulse">

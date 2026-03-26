@@ -16,7 +16,8 @@ import {
   Save,
   X,
   Moon,
-  Sun
+  Sun,
+  Bell
 } from 'lucide-react'
 
 interface Task {
@@ -38,6 +39,7 @@ export default function Home() {
   const [editDueDate, setEditDueDate] = useState('')
   const [editCourse, setEditCourse] = useState('')
   const [darkMode, setDarkMode] = useState(false)
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false)
 
   // Load tasks and theme from localStorage
   useEffect(() => {
@@ -48,6 +50,10 @@ export default function Home() {
     const savedTheme = localStorage.getItem('darkMode')
     if (savedTheme) {
       setDarkMode(JSON.parse(savedTheme))
+    }
+    const savedNotifications = localStorage.getItem('notificationsEnabled')
+    if (savedNotifications) {
+      setNotificationsEnabled(JSON.parse(savedNotifications))
     }
   }, [])
 
@@ -65,6 +71,11 @@ export default function Home() {
       document.documentElement.classList.remove('dark')
     }
   }, [darkMode])
+
+  // Save notification preference
+  useEffect(() => {
+    localStorage.setItem('notificationsEnabled', JSON.stringify(notificationsEnabled))
+  }, [notificationsEnabled])
 
   const getPriority = (dueDate: string): 'high' | 'medium' | 'low' => {
     if (!dueDate || dueDate === 'No deadline') return 'medium'
@@ -134,6 +145,75 @@ export default function Home() {
     setEditingId(null)
   }
 
+  // Request notification permission
+  const requestNotificationPermission = async () => {
+    if ('Notification' in window) {
+      const permission = await Notification.requestPermission()
+      setNotificationsEnabled(permission === 'granted')
+      if (permission === 'granted') {
+        alert('🔔 Notifications enabled! You will be reminded of upcoming deadlines.')
+      } else {
+        alert('❌ Please enable notifications to get deadline reminders.')
+      }
+    } else {
+      alert('Your browser does not support notifications')
+    }
+  }
+
+  // Check for upcoming deadlines
+  const checkDeadlines = () => {
+    if (!notificationsEnabled) return
+    
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    
+    const tomorrow = new Date(today)
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    
+    const upcomingTasks = tasks.filter(task => {
+      if (task.completed) return false
+      if (task.dueDate === 'No deadline') return false
+      
+      const dueDate = new Date(task.dueDate)
+      dueDate.setHours(0, 0, 0, 0)
+      
+      const isDueToday = dueDate.getTime() === today.getTime()
+      const isDueTomorrow = dueDate.getTime() === tomorrow.getTime()
+      
+      return isDueToday || isDueTomorrow
+    })
+    
+    if (upcomingTasks.length > 0) {
+      const dueToday = upcomingTasks.filter(t => new Date(t.dueDate).setHours(0,0,0,0) === today.getTime())
+      const dueTomorrow = upcomingTasks.filter(t => new Date(t.dueDate).setHours(0,0,0,0) === tomorrow.getTime())
+      
+      let message = ''
+      if (dueToday.length > 0) {
+        message += `📌 ${dueToday.length} assignment${dueToday.length > 1 ? 's' : ''} due TODAY!\n`
+      }
+      if (dueTomorrow.length > 0) {
+        message += `⏰ ${dueTomorrow.length} assignment${dueTomorrow.length > 1 ? 's' : ''} due TOMORROW!`
+      }
+      
+      new Notification('📚 Assignment Reminder', {
+        body: message,
+        icon: 'https://emojicdn.elk.sh/📚',
+        badge: 'https://emojicdn.elk.sh/📚'
+      })
+    }
+  }
+
+  // Check deadlines when tasks change and every hour
+  useEffect(() => {
+    if (notificationsEnabled) {
+      // Check immediately when tasks change
+      checkDeadlines()
+      // Set up hourly check
+      const interval = setInterval(checkDeadlines, 60 * 60 * 1000)
+      return () => clearInterval(interval)
+    }
+  }, [tasks, notificationsEnabled])
+
   const filteredTasks = tasks.filter(task => {
     if (filter === 'active') return !task.completed
     if (filter === 'completed') return task.completed
@@ -157,7 +237,7 @@ export default function Home() {
     }`}>
       
       {/* Animated background shapes */}
-      <div className="absolute inset-0 overflow-hidden">
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className={`absolute -top-40 -right-40 w-80 h-80 rounded-full blur-3xl animate-pulse ${
           darkMode ? 'bg-purple-500/20' : 'bg-white/10'
         }`}></div>
@@ -172,7 +252,7 @@ export default function Home() {
       <div className="relative z-10">
         <div className="max-w-4xl mx-auto p-6">
           
-          {/* Header with Dark Mode Toggle */}
+          {/* Header with Dark Mode Toggle and Notifications */}
           <div className="flex justify-between items-center mb-8">
             <div className="text-center flex-1">
               <div className={`inline-flex items-center gap-2 backdrop-blur-sm text-white px-6 py-3 rounded-full shadow-lg mb-4 border border-white/30 ${
@@ -186,12 +266,25 @@ export default function Home() {
               </h1>
               <p className="text-white/90">Never miss a deadline again ✨</p>
             </div>
-            <button
-              onClick={() => setDarkMode(!darkMode)}
-              className="bg-white/20 backdrop-blur-sm text-white p-3 rounded-full hover:bg-white/30 transition-all"
-            >
-              {darkMode ? <Sun size={24} /> : <Moon size={24} />}
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={requestNotificationPermission}
+                className={`backdrop-blur-sm p-3 rounded-full transition-all ${
+                  notificationsEnabled 
+                    ? 'bg-green-500/50 text-white hover:bg-green-500/70' 
+                    : 'bg-white/20 text-white hover:bg-white/30'
+                }`}
+                title={notificationsEnabled ? 'Notifications enabled ✓' : 'Enable notifications'}
+              >
+                <Bell size={24} />
+              </button>
+              <button
+                onClick={() => setDarkMode(!darkMode)}
+                className="bg-white/20 backdrop-blur-sm text-white p-3 rounded-full hover:bg-white/30 transition-all"
+              >
+                {darkMode ? <Sun size={24} /> : <Moon size={24} />}
+              </button>
+            </div>
           </div>
 
           {/* Stats Cards */}

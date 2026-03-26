@@ -11,7 +11,12 @@ import {
   Sparkles,
   Clock,
   BookOpen,
-  Award
+  Award,
+  Edit2,
+  Save,
+  X,
+  Moon,
+  Sun
 } from 'lucide-react'
 
 interface Task {
@@ -28,12 +33,21 @@ export default function Home() {
   const [dueDate, setDueDate] = useState('')
   const [course, setCourse] = useState('')
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editDueDate, setEditDueDate] = useState('')
+  const [editCourse, setEditCourse] = useState('')
+  const [darkMode, setDarkMode] = useState(false)
 
-  // Load tasks from localStorage
+  // Load tasks and theme from localStorage
   useEffect(() => {
     const savedTasks = localStorage.getItem('tasks')
     if (savedTasks) {
       setTasks(JSON.parse(savedTasks))
+    }
+    const savedTheme = localStorage.getItem('darkMode')
+    if (savedTheme) {
+      setDarkMode(JSON.parse(savedTheme))
     }
   }, [])
 
@@ -41,6 +55,16 @@ export default function Home() {
   useEffect(() => {
     localStorage.setItem('tasks', JSON.stringify(tasks))
   }, [tasks])
+
+  // Save theme to localStorage
+  useEffect(() => {
+    localStorage.setItem('darkMode', JSON.stringify(darkMode))
+    if (darkMode) {
+      document.documentElement.classList.add('dark')
+    } else {
+      document.documentElement.classList.remove('dark')
+    }
+  }, [darkMode])
 
   const getPriority = (dueDate: string): 'high' | 'medium' | 'low' => {
     if (!dueDate || dueDate === 'No deadline') return 'medium'
@@ -82,6 +106,34 @@ export default function Home() {
     setTasks(tasks.filter((task) => task.id !== id))
   }
 
+  const startEdit = (task: Task) => {
+    setEditingId(task.id)
+    setEditTitle(task.title)
+    setEditDueDate(task.dueDate === 'No deadline' ? '' : task.dueDate)
+    setEditCourse(task.course || '')
+  }
+
+  const saveEdit = () => {
+    if (!editingId) return
+    setTasks(
+      tasks.map((task) =>
+        task.id === editingId
+          ? {
+              ...task,
+              title: editTitle || task.title,
+              dueDate: editDueDate || 'No deadline',
+              course: editCourse || 'General',
+            }
+          : task
+      )
+    )
+    setEditingId(null)
+  }
+
+  const cancelEdit = () => {
+    setEditingId(null)
+  }
+
   const filteredTasks = tasks.filter(task => {
     if (filter === 'active') return !task.completed
     if (filter === 'completed') return task.completed
@@ -98,30 +150,48 @@ export default function Home() {
   const completionRate = stats.total === 0 ? 0 : Math.round((stats.completed / stats.total) * 100)
 
   return (
-    // Beautiful animated gradient background
-    <div className="min-h-screen bg-gradient-to-br from-purple-600 via-pink-500 to-orange-400 animate-gradient relative">
+    <div className={`min-h-screen transition-all duration-500 ${
+      darkMode 
+        ? 'bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900' 
+        : 'bg-gradient-to-br from-purple-600 via-pink-500 to-orange-400'
+    }`}>
       
       {/* Animated background shapes */}
       <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-white/10 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-yellow-200/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-purple-300/10 rounded-full blur-3xl animate-pulse delay-500"></div>
+        <div className={`absolute -top-40 -right-40 w-80 h-80 rounded-full blur-3xl animate-pulse ${
+          darkMode ? 'bg-purple-500/20' : 'bg-white/10'
+        }`}></div>
+        <div className={`absolute -bottom-40 -left-40 w-80 h-80 rounded-full blur-3xl animate-pulse delay-1000 ${
+          darkMode ? 'bg-pink-500/20' : 'bg-yellow-200/10'
+        }`}></div>
+        <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full blur-3xl animate-pulse delay-500 ${
+          darkMode ? 'bg-indigo-500/20' : 'bg-purple-300/10'
+        }`}></div>
       </div>
       
-      {/* Content */}
       <div className="relative z-10">
         <div className="max-w-4xl mx-auto p-6">
           
-          {/* Header */}
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-sm text-white px-6 py-3 rounded-full shadow-lg mb-4 border border-white/30">
-              <Sparkles className="w-5 h-5" />
-              <span className="font-semibold">AI-Powered Assignment Tracker</span>
+          {/* Header with Dark Mode Toggle */}
+          <div className="flex justify-between items-center mb-8">
+            <div className="text-center flex-1">
+              <div className={`inline-flex items-center gap-2 backdrop-blur-sm text-white px-6 py-3 rounded-full shadow-lg mb-4 border border-white/30 ${
+                darkMode ? 'bg-gray-800/50' : 'bg-white/20'
+              }`}>
+                <Sparkles className="w-5 h-5" />
+                <span className="font-semibold">AI-Powered Assignment Tracker</span>
+              </div>
+              <h1 className="text-5xl font-bold text-white mb-2 drop-shadow-lg">
+                Assignment Agent
+              </h1>
+              <p className="text-white/90">Never miss a deadline again ✨</p>
             </div>
-            <h1 className="text-5xl font-bold text-white mb-2 drop-shadow-lg">
-              Assignment Agent
-            </h1>
-            <p className="text-white/90">Never miss a deadline again ✨</p>
+            <button
+              onClick={() => setDarkMode(!darkMode)}
+              className="bg-white/20 backdrop-blur-sm text-white p-3 rounded-full hover:bg-white/30 transition-all"
+            >
+              {darkMode ? <Sun size={24} /> : <Moon size={24} />}
+            </button>
           </div>
 
           {/* Stats Cards */}
@@ -274,6 +344,8 @@ export default function Home() {
                   low: 'border-l-4 border-green-500 bg-green-50'
                 }
                 
+                const isEditing = editingId === task.id
+                
                 return (
                   <div
                     key={task.id}
@@ -290,38 +362,91 @@ export default function Home() {
                             <Circle className="text-gray-400 hover:text-purple-400" size={24} />
                           )}
                         </button>
-                        <div className="flex-1">
-                          <p
-                            className={`font-semibold ${
-                              task.completed ? 'line-through text-gray-400' : 'text-gray-800'
-                            }`}
-                          >
-                            {task.title}
-                          </p>
-                          <div className="flex gap-3 mt-1">
-                            {task.course && (
-                              <span className="text-xs px-2 py-1 bg-gray-100 rounded-full text-gray-600">
-                                📚 {task.course}
-                              </span>
-                            )}
-                            <span className="text-xs flex items-center gap-1 text-gray-500">
-                              <Calendar size={12} />
-                              Due: {task.dueDate}
-                            </span>
-                            {!task.completed && priority === 'high' && (
-                              <span className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded-full animate-pulse">
-                                🔥 Urgent
-                              </span>
-                            )}
+                        
+                        {isEditing ? (
+                          <div className="flex-1 space-y-2">
+                            <input
+                              type="text"
+                              value={editTitle}
+                              onChange={(e) => setEditTitle(e.target.value)}
+                              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                              autoFocus
+                            />
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                placeholder="Course"
+                                value={editCourse}
+                                onChange={(e) => setEditCourse(e.target.value)}
+                                className="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                              />
+                              <input
+                                type="date"
+                                value={editDueDate}
+                                onChange={(e) => setEditDueDate(e.target.value)}
+                                className="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                              />
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={saveEdit}
+                                className="px-3 py-1 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center gap-1"
+                              >
+                                <Save size={16} /> Save
+                              </button>
+                              <button
+                                onClick={cancelEdit}
+                                className="px-3 py-1 bg-gray-500 text-white rounded-lg hover:bg-gray-600 flex items-center gap-1"
+                              >
+                                <X size={16} /> Cancel
+                              </button>
+                            </div>
                           </div>
-                        </div>
+                        ) : (
+                          <div className="flex-1">
+                            <p
+                              className={`font-semibold ${
+                                task.completed ? 'line-through text-gray-400' : 'text-gray-800'
+                              }`}
+                            >
+                              {task.title}
+                            </p>
+                            <div className="flex gap-3 mt-1">
+                              {task.course && (
+                                <span className="text-xs px-2 py-1 bg-gray-100 rounded-full text-gray-600">
+                                  📚 {task.course}
+                                </span>
+                              )}
+                              <span className="text-xs flex items-center gap-1 text-gray-500">
+                                <Calendar size={12} />
+                                Due: {task.dueDate}
+                              </span>
+                              {!task.completed && priority === 'high' && (
+                                <span className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded-full animate-pulse">
+                                  🔥 Urgent
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <button
-                        onClick={() => deleteTask(task.id)}
-                        className="text-gray-400 hover:text-red-500 transition-colors"
-                      >
-                        <Trash2 size={20} />
-                      </button>
+                      
+                      {!isEditing && (
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => startEdit(task)}
+                            className="text-blue-500 hover:text-blue-700 transition-colors"
+                          >
+                            <Edit2 size={20} />
+                          </button>
+                          <button
+                            onClick={() => deleteTask(task.id)}
+                            className="text-gray-400 hover:text-red-500 transition-colors"
+                          >
+                            <Trash2 size={20} />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )
